@@ -10,6 +10,8 @@ from app.services.git_service import clone_repository
 from app.services.repository_inventory import create_repository_inventory
 from app.services.document_loader import load_repository_documents
 from app.services.text_splitter import split_documents
+from app.services.llm_analyzer import analyze_chunk
+from app.services.report_generator import generate_project_report
 
 app = FastAPI(
     title="RepoLens API",
@@ -46,27 +48,36 @@ def run_analysis(analysis_id: str, repo_url: str):
         # STEP 1: Clone repository
         repo_path = clone_repository(repo_url)
 
-        JOBS[analysis_id]["progress"] = 30
+        JOBS[analysis_id]["progress"] = 25
         JOBS[analysis_id]["message"] = "Creating repository inventory"
 
         # STEP 2: Create inventory
         inventory = create_repository_inventory(repo_path)
 
-        JOBS[analysis_id]["progress"] = 50
+        JOBS[analysis_id]["progress"] = 40
         JOBS[analysis_id]["message"] = "Loading repository documents"
 
         # STEP 3: Load documents
         documents = load_repository_documents(repo_path)
 
-        JOBS[analysis_id]["progress"] = 70
+        if not documents:
+            raise ValueError("No supported documents found in repository")
+
+        JOBS[analysis_id]["progress"] = 50
         JOBS[analysis_id]["message"] = "Splitting documents into chunks"
 
         # STEP 4: Split documents
         chunks = split_documents(documents)
 
-        # STEP 4: Verify chunking results
-        print("\n========== CHUNKING RESULTS ==========")
+        if not chunks:
+            raise ValueError("No chunks were generated from repository documents")
 
+        # Keep documents and chunks in memory
+        JOBS[analysis_id]["documents"] = documents
+        JOBS[analysis_id]["chunks"] = chunks
+
+        # STEP 5: Display chunking information
+        print("\n========== CHUNKING RESULTS ==========")
         print("Documents loaded:", len(documents))
         print("Total chunks created:", len(chunks))
 
@@ -78,24 +89,86 @@ def run_analysis(analysis_id: str, repo_url: str):
             print("Characters:", len(chunk.page_content))
             print("Preview:", chunk.page_content[:200])
 
-            print("=====================================\n")
+        print("=====================================\n")
 
-        # Keep documents and chunks in memory
-        JOBS[analysis_id]["documents"] = documents
-        JOBS[analysis_id]["chunks"] = chunks
+        # STEP 6: Analyze repository chunks using LLM
 
-        JOBS[analysis_id]["progress"] = 100
-        JOBS[analysis_id]["status"] = "completed"
-        JOBS[analysis_id]["message"] = "Document chunking completed"
+        JOBS[analysis_id]["progress"] = 55
+        JOBS[analysis_id]["message"] = "Starting AI chunk analysis"
+
+        # Limit API usage during development
+        MAX_CHUNKS_PER_ANALYSIS = 5
+        chunks_to_analyze = chunks[:MAX_CHUNKS_PER_ANALYSIS]
+
+        project_name = repo_url.rstrip("/").split("/")[-1]
+        project_name = project_name.removesuffix(".git")
+
+        chunk_analyses = []
+
+        for index, chunk in enumerate(chunks_to_analyze):
+
+            file_path = chunk.metadata.get("source", "unknown")
+
+            JOBS[analysis_id]["message"] = (
+                f"Analyzing chunk {index + 1}/{len(chunks_to_analyze)}: "
+                f"{file_path}"
+            )
+
+            analysis = analyze_chunk(
+                project_name=project_name,
+                file_path=file_path,
+                code=chunk.page_content,
+            )
+
+            analysis_data = analysis.model_dump()
+
+            analysis_data["file_path"] = file_path
+            analysis_data["chunk_index"] = chunk.metadata["chunk_index"]
+
+            chunk_analyses.append(analysis_data)
+
+            # Progress: 55% to 85%
+            progress = 55 + int(
+                ((index + 1) / len(chunks_to_analyze)) * 30
+            )
+
+            JOBS[analysis_id]["progress"] = progress
+
+        JOBS[analysis_id]["chunk_analyses"] = chunk_analyses
+
+        # STEP 7: Generate consolidated project report
+
+        JOBS[analysis_id]["progress"] = 90
+        JOBS[analysis_id]["message"] = "Generating project report"
+
+        report = generate_project_report(
+            project_name=project_name,
+            chunk_analyses=chunk_analyses,
+        )
+
+        # Convert Pydantic report into a dictionary
+        report_data = report.model_dump()
+
+        JOBS[analysis_id]["report"] = report_data
+
+        # STEP 8: Store final results
+
+        JOBS[analysis_id]["progress"] = 98
+        JOBS[analysis_id]["message"] = "Saving analysis results"
 
         JOBS[analysis_id]["result"] = {
             "repository": repo_url,
             "inventory": inventory,
             "documents_loaded": len(documents),
             "chunks_created": len(chunks),
+            "chunks_analyzed": len(chunk_analyses),
+            "chunk_analyses": chunk_analyses,
+            "project_report": report_data,
+
             "document_sources": [
                 doc.metadata["source"] for doc in documents
             ],
+
             "chunk_sources": [
                 {
                     "source": chunk.metadata["source"],
@@ -106,11 +179,21 @@ def run_analysis(analysis_id: str, repo_url: str):
             ],
         }
 
+        # STEP 9: Mark analysis as completed
+
+        JOBS[analysis_id]["progress"] = 100
+        JOBS[analysis_id]["status"] = "completed"
+        JOBS[analysis_id]["message"] = "Project analysis completed successfully"
+
+        print("\n========== PROJECT REPORT ==========")
+        print(report.model_dump_json(indent=2))
+        print("====================================\n")
+
     except Exception as error:
         JOBS[analysis_id]["status"] = "failed"
         JOBS[analysis_id]["message"] = str(error)
 
-
+        print(f"\nAnalysis failed: {error}")
 @app.get("/")
 def health_check():
     return {"message": "RepoLens API is running"}
