@@ -120,6 +120,10 @@ async function startAnalysis() {
 
         const reportData = await reportResponse.json();
 
+        console.log("========== API REPORT RESPONSE ==========");
+        console.log(reportData);
+        console.log("=========================================");
+
         if (!reportResponse.ok) {
             throw new Error(reportData.detail || "Could not retrieve report.");
         }
@@ -139,11 +143,33 @@ async function startAnalysis() {
 }
 
 function displayReport(data) {
-    const inventory = data.inventory;
+
+    console.log("Display report received:", data);
+    console.log("Project report:", data.project_report);
+    console.log("Nested result:", data.result);
+
+    // Support either a direct result or a response containing result.
+    const result = data.result || data;
+
+    const inventory = result.inventory;
+    const projectReport =
+        result.project_report ||
+        result.report ||
+        data.project_report ||
+        data.report;
+
+    if (!inventory) {
+        throw new Error("Repository inventory is missing from the API response.");
+    }
+
+    if (!projectReport) {
+        throw new Error("AI project report is missing from the API response.");
+    }
 
     resultsSection.classList.remove("hidden");
 
-    const repoUrl = data.repository || repoInput.value;
+    // Repository information
+    const repoUrl = result.repository || repoInput.value;
     const parts = repoUrl.replace(/\/+$/, "").split("/");
 
     document.getElementById("repoName").textContent =
@@ -151,6 +177,7 @@ function displayReport(data) {
 
     document.getElementById("repoUrlDisplay").textContent = repoUrl;
 
+    // Inventory statistics
     document.getElementById("totalFiles").textContent =
         inventory.total_files;
 
@@ -164,12 +191,13 @@ function displayReport(data) {
     const extensionList = document.getElementById("extensionList");
     extensionList.replaceChildren();
 
-    const extensions = Object.entries(inventory.extension_counts)
+    const extensions = Object.entries(inventory.extension_counts || {})
         .sort((a, b) => b[1] - a[1]);
 
     const maxCount = Math.max(1, ...extensions.map(item => item[1]));
 
     extensions.forEach(([extension, count]) => {
+
         const item = document.createElement("div");
         item.className = "extension-item";
 
@@ -200,16 +228,22 @@ function displayReport(data) {
     const importantFiles = document.getElementById("importantFiles");
     importantFiles.replaceChildren();
 
-    if (inventory.important_files.length === 0) {
+    if (!inventory.important_files?.length) {
+
         const empty = document.createElement("p");
         empty.className = "muted";
         empty.textContent = "No important files detected.";
+
         importantFiles.append(empty);
+
     } else {
+
         inventory.important_files.forEach(file => {
+
             const item = document.createElement("div");
             item.className = "file-item";
             item.textContent = file.path;
+
             importantFiles.append(item);
         });
     }
@@ -222,6 +256,7 @@ function displayReport(data) {
         `${inventory.files.length} files`;
 
     inventory.files.forEach(file => {
+
         const row = document.createElement("tr");
 
         const values = [
@@ -232,13 +267,103 @@ function displayReport(data) {
         ];
 
         values.forEach(value => {
+
             const cell = document.createElement("td");
             cell.textContent = value;
+
             row.append(cell);
         });
 
         tbody.append(row);
     });
+
+    // Render AI-generated project report
+    renderProjectReport(projectReport);
+}
+
+function renderProjectReport(report) {
+
+    // Project overview
+    document.getElementById("projectOverview").textContent =
+        report.overview || "No overview available.";
+
+    // Architecture
+    document.getElementById("projectArchitecture").textContent =
+        report.architecture || "No architecture information available.";
+
+    // Languages and frameworks
+    renderTags("reportLanguages", report.languages);
+    renderTags("reportFrameworks", report.frameworks);
+
+    // Databases
+    renderList("reportDatabases", report.database, "No databases identified.");
+
+    // Main features
+    renderList("reportFeatures", report.main_features);
+
+    // Technical challenges
+    renderList("reportChallenges", report.technical_challenges);
+
+    // Suggested improvements
+    renderList("reportImprovements", report.improvements);
+}
+
+
+// Render technology tags
+function renderTags(elementId, items = []) {
+
+    const container = document.getElementById(elementId);
+    container.replaceChildren();
+
+    if (!items || items.length === 0) {
+
+        const empty = document.createElement("span");
+        empty.className = "muted";
+        empty.textContent = "No information available.";
+
+        container.append(empty);
+        return;
+    }
+
+    items.forEach(item => {
+
+        const tag = document.createElement("span");
+        tag.className = "report-tag";
+        tag.textContent = item;
+
+        container.append(tag);
+    });
+}
+
+
+// Render bullet-point lists
+function renderList(elementId, items = [], emptyMessage = "No information available.") {
+
+    const container = document.getElementById(elementId);
+    container.replaceChildren();
+
+    if (!items || items.length === 0) {
+
+        const empty = document.createElement("p");
+        empty.className = "muted";
+        empty.textContent = emptyMessage;
+
+        container.append(empty);
+        return;
+    }
+
+    const list = document.createElement("ul");
+    list.className = "report-bullet-list";
+
+    items.forEach(item => {
+
+        const li = document.createElement("li");
+        li.textContent = item;
+
+        list.append(li);
+    });
+
+    container.append(list);
 }
 
 function formatBytes(bytes) {
