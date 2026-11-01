@@ -1,0 +1,158 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RepoLens — AI Repository Analyzer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="app-shell">
+
+        <header class="navbar">
+            <a href="#" class="brand">
+                <span class="brand-icon">R</span>
+                <span>RepoLens</span>
+            </a>
+            <span class="nav-label">AI Repository Intelligence</span>
+            <div class="api-status">
+                <span class="status-dot"></span>
+                <span id="apiStatus">Checking API...</span>
+            </div>
+        </header>
+
+        <main class="main-container">
+
+            <section class="hero">
+                <div class="eyebrow">UNDERSTAND ANY CODEBASE</div>
+                <h1>Know your codebase.<br><span>Inside and out.</span></h1>
+                <p>
+                    Analyze GitHub repositories and discover their architecture,
+                    technologies, structure, and technical insights.
+                </p>
+
+                <div class="analyzer-box">
+                    <div class="input-wrapper">
+                        <span class="github-icon">⌘</span>
+                        <input
+                            id="repoUrl"
+                            type="url"
+                            placeholder="https://github.com/username/repository"
+                        >
+                        <button id="analyzeBtn">Analyze Repository ↗</button>
+                    </div>
+                    <div class="input-hint">
+                        <span>↳</span> Public GitHub repositories supported
+                    </div>
+                </div>
+            </section>
+
+            <section id="progressSection" class="progress-section hidden">
+                <div class="section-heading">
+                    <div>
+                        <span class="eyebrow">ANALYSIS IN PROGRESS</span>
+                        <h2 id="progressTitle">Analyzing repository</h2>
+                    </div>
+                    <span id="progressPercent">0%</span>
+                </div>
+
+                <div class="progress-track">
+                    <div id="progressBar" class="progress-fill"></div>
+                </div>
+
+                <p id="progressMessage">Waiting to start...</p>
+            </section>
+
+            <section id="errorSection" class="error-section hidden">
+                <strong>Something went wrong</strong>
+                <p id="errorMessage"></p>
+            </section>
+
+            <section id="resultsSection" class="results-section hidden">
+
+                <div class="results-header">
+                    <div>
+                        <span class="eyebrow">ANALYSIS RESULTS</span>
+                        <h2 id="repoName">Repository overview</h2>
+                        <p id="repoUrlDisplay" class="muted"></p>
+                    </div>
+                    <button id="newAnalysisBtn" class="secondary-btn">
+                        + New Analysis
+                    </button>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <span class="stat-label">TOTAL FILES</span>
+                        <strong id="totalFiles">0</strong>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">DISCOVERED FILES</span>
+                        <strong id="supportedFiles">0</strong>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">IGNORED FILES</span>
+                        <strong id="ignoredFiles">0</strong>
+                    </div>
+                </div>
+
+                <div class="content-grid">
+
+                    <div class="panel">
+                        <div class="panel-heading">
+                            <h3>File extensions</h3>
+                            <span class="muted">Distribution</span>
+                        </div>
+                        <div id="extensionList" class="extension-list"></div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-heading">
+                            <h3>Important files</h3>
+                            <span class="muted">Project configuration</span>
+                        </div>
+                        <div id="importantFiles" class="file-list"></div>
+                    </div>
+
+                </div>
+
+                <div class="panel inventory-panel">
+                    <div class="panel-heading">
+                        <div>
+                            <h3>Repository inventory</h3>
+                            <p class="muted">Files discovered in this repository</p>
+                        </div>
+                        <span id="fileCount" class="count-badge">0 files</span>
+                    </div>
+
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>FILE NAME</th>
+                                    <th>EXTENSION</th>
+                                    <th>SIZE</th>
+                                    <th>TYPE</th>
+                                </tr>
+                            </thead>
+                            <tbody id="fileTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </section>
+
+        </main>
+
+        <footer>
+            <span>RepoLens © 2026</span>
+            <span>Built for developers, by developers.</span>
+        </footer>
+
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
