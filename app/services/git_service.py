@@ -1,9 +1,12 @@
 import tempfile
-from pathlib import Path
+
 from git import Repo
 
 
 def clone_repository(repo_url: str) -> str:
+
+    # Convert Pydantic HttpUrl into a normal Python string
+    repo_url = str(repo_url)
 
     if not repo_url.startswith("https://github.com/"):
         raise ValueError("Only GitHub HTTPS URLs are supported")

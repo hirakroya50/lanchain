@@ -12,6 +12,12 @@ from app.services.document_loader import load_repository_documents
 from app.services.text_splitter import split_documents
 from app.services.llm_analyzer import analyze_chunk
 from app.services.report_generator import generate_project_report
+from app.schemas.analysis_request import AnalysisRequest
+from app.schemas.analysis_response import AnalysisCreatedResponse
+import uuid
+from fastapi import BackgroundTasks
+from app.schemas.job_status import JobStatus
+from app.schemas.report import RepositoryReport
 
 app = FastAPI(
     title="RepoLens API",
@@ -100,6 +106,10 @@ def run_analysis(analysis_id: str, repo_url: str):
         MAX_CHUNKS_PER_ANALYSIS = 5
         chunks_to_analyze = chunks[:MAX_CHUNKS_PER_ANALYSIS]
 
+        # Convert HttpUrl into a regular Python string
+        repo_url = str(repo_url)
+
+        # Extract repository name
         project_name = repo_url.rstrip("/").split("/")[-1]
         project_name = project_name.removesuffix(".git")
 
@@ -188,91 +198,153 @@ def run_analysis(analysis_id: str, repo_url: str):
         print("\n========== PROJECT REPORT ==========")
         print(report.model_dump_json(indent=2))
         print("====================================\n")
-
+    
     except Exception as error:
-        JOBS[analysis_id]["status"] = "failed"
-        JOBS[analysis_id]["message"] = str(error)
 
-        print(f"\nAnalysis failed: {error}")
+        import traceback
+
+        JOBS[analysis_id]["status"] = "failed"
+        JOBS[analysis_id]["progress"] = 0
+        JOBS[analysis_id]["message"] = "Analysis failed"
+        JOBS[analysis_id]["error"] = str(error)
+
+        print("\n========== ANALYSIS ERROR ==========")
+        print(f"Error: {error}")
+        traceback.print_exc()
+        print("====================================\n")
+
+
+
+
+        
+
 @app.get("/")
 def health_check():
     return {"message": "RepoLens API is running"}
 
 
-@app.post("/api/analyses", status_code=202)
+@app.post(
+    "/api/analyses",
+    response_model=AnalysisCreatedResponse
+)
 def create_analysis(
-    request: AnalysisRequest,
-    background_tasks: BackgroundTasks,
+    data: AnalysisRequest,
+    background_tasks: BackgroundTasks
 ):
-    parsed_url = urlparse(str(request.repo_url))
-
-    if parsed_url.hostname != "github.com":
-        raise HTTPException(
-            status_code=400,
-            detail="Only GitHub repository URLs are supported",
-        )
-
-    parts = parsed_url.path.strip("/").split("/")
-
-    if len(parts) != 2 or not all(parts):
-        raise HTTPException(
-            status_code=400,
-            detail="Provide a valid GitHub owner/repository URL",
-        )
-
-    analysis_id = str(uuid4())
+    analysis_id = str(uuid.uuid4())
 
     JOBS[analysis_id] = {
-        "status": "queued",
+        "status": "pending",
         "progress": 0,
-        "message": "Waiting to start",
+        "message": "Analysis queued",
         "result": None,
+        "error": None,
     }
 
     background_tasks.add_task(
         run_analysis,
         analysis_id,
-        str(request.repo_url),
+        data.repo_url,
     )
 
-    return {
-        "analysis_id": analysis_id,
-        "status": "queued",
+    return AnalysisCreatedResponse(
+        analysis_id=analysis_id,
+        status="pending",
+        message="Repository analysis started",
+    )
+
+
+def create_analysis(
+    data: AnalysisRequest,
+    background_tasks: BackgroundTasks
+):
+
+    analysis_id = str(uuid.uuid4())
+
+    JOBS[analysis_id] = {
+        "status": "pending",
+        "progress": 0,
+        "message": "Analysis queued",
+        "result": None,
+        "error": None,
     }
 
+    background_tasks.add_task(
+        run_analysis,
+        analysis_id,
+        data.repo_url,
+    )
 
-@app.get("/api/analyses/{analysis_id}")
+    return AnalysisCreatedResponse(
+        analysis_id=analysis_id,
+        status="pending",
+        message="Repository analysis started",
+    )
+
+
+
+@app.get(
+    "/api/analyses/{analysis_id}",
+    response_model=JobStatus
+)
 def get_analysis_status(analysis_id: str):
+
+    # Step 1: Find the analysis job
     job = JOBS.get(analysis_id)
 
-    if not job:
+    # Step 2: Check whether the job exists
+    if job is None:
         raise HTTPException(
             status_code=404,
-            detail="Analysis not found",
+            detail="Analysis not found"
         )
 
-    return {
-        "analysis_id": analysis_id,
-        "status": job["status"],
-        "progress": job["progress"],
-        "message": job["message"],
-    }
+    # Step 3: Build the response
+    response = JobStatus(
+        analysis_id=analysis_id,
+        status=job.get("status", "pending"),
+        progress=job.get("progress", 0),
+        message=job.get("message", ""),
+        error=job.get("error"),
+    )
+
+    # Step 4: Return validated response
+    return response
 
 
 @app.get("/api/analyses/{analysis_id}/report")
 def get_analysis_report(analysis_id: str):
+
+    # 1. Find the analysis job
     job = JOBS.get(analysis_id)
 
-    if not job:
+    if job is None:
         raise HTTPException(
             status_code=404,
             detail="Analysis not found",
         )
 
-    if job["status"] != "completed":
+    # 2. Check analysis status
+    if job.get("status") == "failed":
+        raise HTTPException(
+            status_code=409,
+            detail=job.get("error", "Analysis failed"),
+        )
+
+    if job.get("status") != "completed":
         raise HTTPException(
             status_code=409,
             detail="Analysis is not completed yet",
         )
 
-    return job["result"]
+    # 3. Get complete analysis result
+    result = job.get("result")
+
+    if not result:
+        raise HTTPException(
+            status_code=404,
+            detail="Analysis result not found",
+        )
+
+    # 4. Return inventory + AI report + analysis metadata
+    return result
