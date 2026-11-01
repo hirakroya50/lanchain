@@ -8,7 +8,7 @@ from pydantic import BaseModel, HttpUrl
 
 from app.services.git_service import clone_repository
 from app.services.repository_inventory import create_repository_inventory
-
+from app.services.document_loader import load_repository_documents
 
 app = FastAPI(
     title="RepoLens API",
@@ -36,33 +36,46 @@ JOBS = {}
 class AnalysisRequest(BaseModel):
     repo_url: HttpUrl
 
-
 def run_analysis(analysis_id: str, repo_url: str):
     try:
         JOBS[analysis_id]["status"] = "running"
         JOBS[analysis_id]["progress"] = 10
         JOBS[analysis_id]["message"] = "Cloning repository"
 
+        # STEP 1: Clone repository
         repo_path = clone_repository(repo_url)
 
         JOBS[analysis_id]["progress"] = 40
         JOBS[analysis_id]["message"] = "Creating repository inventory"
 
+        # STEP 2: Create inventory
         inventory = create_repository_inventory(repo_path)
+
+        JOBS[analysis_id]["progress"] = 70
+        JOBS[analysis_id]["message"] = "Loading repository documents"
+
+        # STEP 3: Load documents
+        documents = load_repository_documents(repo_path)
+
+        # Keep documents in memory for the next processing stage.
+        JOBS[analysis_id]["documents"] = documents
 
         JOBS[analysis_id]["progress"] = 100
         JOBS[analysis_id]["status"] = "completed"
-        JOBS[analysis_id]["message"] = "Inventory completed"
+        JOBS[analysis_id]["message"] = "Document loading completed"
 
         JOBS[analysis_id]["result"] = {
             "repository": repo_url,
             "inventory": inventory,
+            "documents_loaded": len(documents),
+            "document_sources": [
+                doc.metadata["source"] for doc in documents
+            ],
         }
 
     except Exception as error:
         JOBS[analysis_id]["status"] = "failed"
         JOBS[analysis_id]["message"] = str(error)
-
 
 @app.get("/")
 def health_check():
@@ -114,7 +127,7 @@ def create_analysis(
 @app.get("/api/analyses/{analysis_id}")
 def get_analysis_status(analysis_id: str):
     job = JOBS.get(analysis_id)
-    # print(f"request commint ---------------- /api/analyses/{analysis_id}-- 1-----")
+
     if not job:
         raise HTTPException(
             status_code=404,
